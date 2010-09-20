@@ -2,133 +2,149 @@ require 'strscan'
 
 module Lokar
 	def self.render(string, filename = '<Lokar>', binding = nil)
-		output = ["__output__ = []", *parse(string, filename), "\n__output__"]
-		
-		eval(output.join, binding, filename).join
+		eval("__output__ = []#{parse(string, filename).join}; __output__", binding, filename).join
 	end
 	
 	def self.compile(string, filename = '<Lokar>', binding = nil)
-		output = ["Proc.new do __output__ = []", *parse(string, filename), "\n__output__ end"]
-		
-		eval output.join, binding, filename
+		eval "Proc.new do __output__ = []#{parse(string, filename).join}; __output__ end", binding, filename
 	end
 	
 	def self.parse(string, filename)
 		scanner = StringScanner.new(string)
-		output = []
 		prev_text = false
 		prev_output = true
+		output = []
+		line = 1
+		flushed = 1
 		
 		while true
-			match = scanner.scan_until(/(?=<\?r[ \t]|\#{|^[ \t]*%)/m)
+			match = scanner.scan_until(/(?=<\?r(?:[ \t]|$)|\#?\#{|^[ \t]*%|(?:\r\n?|\n))/m)
 			if match
 				# Add the text before the match
-				if prev_text
-					output.insert(-1, match.inspect)
-				else
+				unless prev_text
 					if prev_output
-						output << " << "
+						output << "<<"
 					else
-						output << "\n__output__ << "
+						output << ";__output__<<"
 						prev_output = true
 					end
-					output << match.inspect
 					prev_text = true
 				end
+				output << match.inspect
 				
 				case # Find out what of the regular expression matched
-					when scanner.match?(/</) # Parse <?r ?> tags
+					when match = scanner.scan(/\r\n?|\n/) # Parse newlines
+						unless prev_text
+							if prev_output
+								output << "<<"
+							else
+								output << ";__output__<<"
+								prev_output = true
+							end
+							prev_text = true
+						end
+						output << match.inspect
+						line += 1
+						
+					when scanner.match?(/</) # Parse <?r?> tags
 						scanner.pos += 3
 						result = scanner.scan_until(/(?=\?>)/m)
-						raise "#{filename}: Unterminated <?r ?> tag" unless result
+						raise "#{filename}:#{line}: Unterminated <\?r ?> tag" unless result
 						
-						output << "\n"
-						output << result
-						
+						output << ("\n" * (line - flushed)) << ";" << result
+						flushed = line
 						prev_text = false
 						prev_output = false
 						
 						scanner.pos += 2
 					
-					when scanner.match?(/\#/) # Parse #{ } tags
-						index = 1
-						scanner.pos += 2
-						
-						if prev_output
-							output << " << ("
-						else
-							output << "\n__output__ << ("
-							prev_output = true
-						end
-						
-						while true
-							result = scanner.scan_until(/(?=}|{)/m)
-							raise "#{filename}: Unterminated \#{ } tag" unless result
-							output << result
-							case 
-								when scanner.scan(/{/)
-									index += 1
-									output << '{'
-									
-								when scanner.scan(/}/)
-									index -= 1
-									break if index == 0
-									output << '}'
+					when scanner.skip(/\#/) # Parse #{ } tags
+						if scanner.skip(/\#/)
+							unless prev_text
+								if prev_output
+									output << "<<"
+								else
+									output << ";__output__<<"
+									prev_output = true
+								end
+								prev_text = true
 							end
+							output << '#'.inspect
+						else
+							index = 1
+							scanner.pos += 1
+							
+							if prev_output
+								output << "<<" << ("\n" * (line - flushed)) << "("
+							else
+								output << ("\n" * (line - flushed)) << ";__output__<<("
+								prev_output = true
+							end
+							flushed = line
+							prev_text = false
+							
+							while true
+								result = scanner.scan_until(/(?=}|{)/m)
+								raise "#{filename}:#{line}: Unterminated \#\{ } tag" unless result
+								output << result
+								case
+									when scanner.skip(/{/)
+										index += 1
+										output << '{'
+										
+									when scanner.skip(/}/)
+										index -= 1
+										break if index == 0
+										output << '}'
+								end
+							end
+							
+							output << ")"
 						end
-						
-						output << ")"
-						
-						prev_output = true
-						prev_text = false
 					
 					else # Parse %, %% and %= lines
 						result = scanner.scan(/[ \t]*%/)
-						if scanner.scan(/%/)
-							result = result.inspect
-							if prev_text
-								output << result
-							else
+						if scanner.skip(/%/)
+							unless prev_text
 								if prev_output
-									output << " << "
+									output << "<<"
 								else
-									output << "\n__output__ << "
+									output << ";__output__<<"
 									prev_output = true
 								end
-								output << result
 								prev_text = true
 							end
-						else
-							if scanner.scan(/=/)
-								if prev_output
-									output << " << ("
-								else
-									output << "\n__output__ << ("
-									prev_output = true
-								end
-								output << scanner.scan_until(/(\r\n|\n|\Z)/) 
-								output << ")"
+							output << result.inspect
+						elsif scanner.skip(/=/)
+							if prev_output
+								output << "<<" << ("\n" * (line - flushed)) << "("
 							else
-								output << "\n"
-								output << scanner.scan_until(/(\r\n|\n|\Z)/)
-								prev_output = false
+								output << ("\n" * (line - flushed)) << ";__output__<<("
+								prev_output = true
 							end
+							flushed = line
 							prev_text = false
+							output << scanner.scan_until(/(?=\r\n|\n|\Z)/) << ")"
+						else
+							output << ("\n" * (line - flushed)) << ";" << scanner.scan_until(/\r\n|\n|\Z/)
+							flushed = line
+							prev_text = false
+							prev_output = false
 						end
 				end
 			else # End of file
 				unless scanner.eos?
 					# Add the pending text
-					if prev_text
-						output << scanner.rest.inspect
-					else
+					unless prev_text
 						if prev_output
-							output << " << "
+							output << "<<"
 						else
-							output << "\n__output__ << "
+							output << ";__output__<<"
+							prev_output = true
 						end
-						output << scanner.rest.inspect
+						prev_text = true
 					end
+					output << scanner.rest.inspect
 				end
 				break
 			end

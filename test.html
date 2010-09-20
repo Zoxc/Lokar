@@ -1,0 +1,23 @@
+<html>
+  <head>
+    <title>Lokar test</title>
+  </head>
+  <body>
+  <h1>The test template for Lokar</h1>
+    %= a('Home')
+    <p>
+      You can link somewhere by typing ##{a(location)}.
+      #{a("link to somewhere")}
+    </p>
+    <div>
+      %% - the arguments you have passed to this action are:
+      <?r if @args.empty? ?>
+        none
+      <?r else ?>
+        % @args.each do |arg|
+          <span>#{arg}</span>
+        % end
+      <?r end ?>
+    </div>
+  </body>
+</html>
