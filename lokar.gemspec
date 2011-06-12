@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name = 'lokar'
-  s.version = '0.2.0'
+  s.version = '0.2.1'
   s.author = 'Zoxc'
   s.require_path = '.'
   s.required_ruby_version = '>= 1.9.0'

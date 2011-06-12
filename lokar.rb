@@ -1,6 +1,19 @@
 require 'strscan'
 
 module Lokar
+	if defined? Tilt
+		class Template < Tilt::Template
+			def prepare
+				@proc = Lokar.compile(data, eval_file)
+			end
+
+			def evaluate(scope, locals, &block)
+				scope.instance_eval(&@proc).join
+			end
+		end
+		Tilt.register Template, 'lokar'
+	end
+	
 	def self.render(string, filename = '<Lokar>', binding = nil)
 		eval("__output__ = []#{parse(string, filename).join}; __output__", binding, filename).join
 	end

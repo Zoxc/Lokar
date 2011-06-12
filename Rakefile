@@ -23,7 +23,7 @@ task :test do
 end
 
 task :default do
-	require 'lokar'
+	require_relative 'lokar'
 	
 	__output__ = nil
 	
